@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Geolonia TileServerを使用したインタラクティブな地図アプリケーション"
+    />
+    <title>Interactive Map - Geolonia</title>
+
+    <!-- Preconnect for performance -->
+    <link rel="preconnect" href="https://cdn.geolonia.com" />
+
+    <style>
+      :root {
+        --primary-color: #2563eb;
+        --primary-hover: #1d4ed8;
+        --secondary-color: #64748b;
+        --background-color: #ffffff;
+        --surface-color: #f8fafc;
+        --text-color: #1e293b;
+        --text-secondary: #64748b;
+        --border-color: #e2e8f0;
+        --shadow-light: 0 1px 3px 0 rgb(0 0 0 / 0.1),
+          0 1px 2px -1px rgb(0 0 0 / 0.1);
+        --shadow-medium: 0 4px 6px -1px rgb(0 0 0 / 0.1),
+          0 2px 4px -2px rgb(0 0 0 / 0.1);
+        --shadow-large: 0 10px 15px -3px rgb(0 0 0 / 0.1),
+          0 4px 6px -4px rgb(0 0 0 / 0.1);
+        --border-radius: 12px;
+        --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      [data-theme="dark"] {
+        --background-color: #0f172a;
+        --surface-color: #1e293b;
+        --text-color: #f1f5f9;
+        --text-secondary: #94a3b8;
+        --border-color: #334155;
+        --shadow-light: 0 1px 3px 0 rgb(0 0 0 / 0.3),
+          0 1px 2px -1px rgb(0 0 0 / 0.3);
+        --shadow-medium: 0 4px 6px -1px rgb(0 0 0 / 0.3),
+          0 2px 4px -2px rgb(0 0 0 / 0.3);
+        --shadow-large: 0 10px 15px -3px rgb(0 0 0 / 0.3),
+          0 4px 6px -4px rgb(0 0 0 / 0.3);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Oxygen, Ubuntu, Cantarell, sans-serif;
+        background: linear-gradient(
+          135deg,
+          var(--background-color) 0%,
+          var(--surface-color) 100%
+        );
+        color: var(--text-color);
+        line-height: 1.6;
+        min-height: 100vh;
+        transition: var(--transition);
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 3rem;
+      }
+
+      .title {
+        font-size: clamp(2rem, 5vw, 3rem);
+        font-weight: 800;
+        background: linear-gradient(135deg, var(--primary-color), #7c3aed);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 1rem;
+      }
+
+      .subtitle {
+        font-size: 1.1rem;
+        color: var(--text-secondary);
+        max-width: 600px;
+        margin: 0 auto;
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        justify-content: center;
+        align-items: center;
+        margin-bottom: 2rem;
+        padding: 1.5rem;
+        background: var(--surface-color);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-light);
+        border: 1px solid var(--border-color);
+      }
+
+      .control-group {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .control-label {
+        font-weight: 600;
+        color: var(--text-color);
+        font-size: 0.9rem;
+      }
+
+      .btn {
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: calc(var(--border-radius) / 2);
+        font-weight: 600;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: var(--transition);
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        text-decoration: none;
+        min-height: 44px; /* Accessibility: minimum touch target */
+      }
+
+      .btn:focus {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 2px;
+      }
+
+      .btn-primary {
+        background: var(--primary-color);
+        color: white;
+        box-shadow: var(--shadow-light);
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        background: var(--primary-hover);
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-medium);
+      }
+
+      .btn-secondary {
+        background: var(--surface-color);
+        color: var(--text-color);
+        border: 1px solid var(--border-color);
+      }
+
+      .btn-secondary:hover:not(:disabled) {
+        background: var(--border-color);
+        transform: translateY(-1px);
+      }
+
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .map-container {
+        position: relative;
+        background: var(--surface-color);
+        border-radius: var(--border-radius);
+        overflow: hidden;
+        box-shadow: var(--shadow-large);
+        border: 1px solid var(--border-color);
+        margin-bottom: 2rem;
+      }
+
+      .map-header {
+        padding: 1rem 1.5rem;
+        background: var(--surface-color);
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+
+      .map-title {
+        font-weight: 600;
+        color: var(--text-color);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .theme-toggle {
+        background: none;
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        padding: 0.5rem;
+        border-radius: calc(var(--border-radius) / 2);
+        cursor: pointer;
+        transition: var(--transition);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+      }
+
+      .theme-toggle:hover {
+        background: var(--border-color);
+      }
+
+      .theme-toggle:focus {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 2px;
+      }
+
+      .geolonia {
+        width: 100%;
+        height: 60vh;
+        min-height: 400px;
+        max-height: 600px;
+        border: none;
+        display: block;
+      }
+
+      .loading {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+        z-index: 10;
+      }
+
+      .spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid var(--border-color);
+        border-top: 3px solid var(--primary-color);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      .info-panel {
+        background: var(--surface-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        box-shadow: var(--shadow-light);
+        border: 1px solid var(--border-color);
+      }
+
+      .info-title {
+        font-weight: 600;
+        margin-bottom: 1rem;
+        color: var(--text-color);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+      }
+
+      .info-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 0.75rem;
+        background: var(--background-color);
+        border-radius: calc(var(--border-radius) / 2);
+        border: 1px solid var(--border-color);
+      }
+
+      .info-key {
+        font-weight: 500;
+        color: var(--text-secondary);
+      }
+
+      .info-value {
+        font-weight: 600;
+        color: var(--text-color);
+      }
+
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+
+      /* Responsive Design */
+      @media (max-width: 768px) {
+        .container {
+          padding: 1rem;
+        }
+
+        .controls {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .control-group {
+          justify-content: center;
+        }
+
+        .map-header {
+          flex-direction: column;
+          text-align: center;
+        }
+
+        .geolonia {
+          height: 50vh;
+          min-height: 300px;
+        }
+
+        .info-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      /* High contrast mode support */
+      @media (prefers-contrast: high) {
+        :root {
+          --border-color: #000000;
+          --text-secondary: #000000;
+        }
+
+        [data-theme="dark"] {
+          --border-color: #ffffff;
+          --text-secondary: #ffffff;
+        }
+      }
+
+      /* Reduced motion support */
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+
+      /* Print styles */
+      @media print {
+        .controls,
+        .theme-toggle {
+          display: none;
+        }
+
+        .map-container {
+          box-shadow: none;
+          border: 2px solid #000;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header class="header">
+        <h1 class="title">Interactive Map</h1>
+        <p class="subtitle">
+          Geolonia TileServerを使用した高機能マップアプリケーション
+        </p>
+      </header>
+
+      <div class="controls" role="toolbar" aria-label="地図操作">
+        <div class="control-group">
+          <span class="control-label">場所:</span>
+          <button
+            class="btn btn-primary"
+            onclick="goToTokyo()"
+            aria-label="東京に移動"
+          >
+            🗼 東京
+          </button>
+          <button
+            class="btn btn-primary"
+            onclick="goToOsaka()"
+            aria-label="大阪に移動"
+          >
+            🏯 大阪
+          </button>
+          <button
+            class="btn btn-primary"
+            onclick="resetView()"
+            aria-label="全体表示に戻る"
+          >
+            🌍 全体表示
+          </button>
+        </div>
+        <div class="control-group">
+          <span class="control-label">スタイル:</span>
+          <button
+            class="btn btn-secondary"
+            onclick="changeStyle('geolonia/basic')"
+            aria-label="ベーシックスタイルに変更"
+          >
+            Basic
+          </button>
+          <button
+            class="btn btn-secondary"
+            onclick="changeStyle('geolonia/midnight')"
+            aria-label="ミッドナイトスタイルに変更"
+          >
+            Midnight
+          </button>
+        </div>
+      </div>
+
+      <div class="map-container">
+        <div class="map-header">
+          <h2 class="map-title">
+            <span aria-hidden="true">🗺️</span>
+            地図表示
+          </h2>
+          <button
+            class="theme-toggle"
+            onclick="toggleTheme()"
+            aria-label="ダークモード切り替え"
+            title="テーマ切り替え"
+          >
+            <span id="theme-icon" aria-hidden="true">🌙</span>
+          </button>
+        </div>
+
+        <div class="loading" id="loading">
+          <div
+            class="spinner"
+            role="status"
+            aria-label="地図を読み込み中"
+          ></div>
+          <span class="sr-only">地図を読み込んでいます...</span>
+          <p>地図を読み込み中...</p>
+        </div>
+
+        <div
+          class="geolonia"
+          data-lat="35.6762"
+          data-lng="139.6503"
+          data-zoom="5"
+          data-style="geolonia/basic"
+          role="application"
+          aria-label="インタラクティブマップ"
+          tabindex="0"
+        ></div>
+      </div>
+
+      <div class="info-panel">
+        <h3 class="info-title">
+          <span aria-hidden="true">ℹ️</span>
+          地図情報
+        </h3>
+        <div class="info-grid">
+          <div class="info-item">
+            <span class="info-key">現在の座標</span>
+            <span class="info-value" id="current-coords"
+              >35.6762, 139.6503</span
+            >
+          </div>
+          <div class="info-item">
+            <span class="info-key">ズームレベル</span>
+            <span class="info-value" id="current-zoom">5</span>
+          </div>
+          <div class="info-item">
+            <span class="info-key">地図スタイル</span>
+            <span class="info-value" id="current-style">Basic</span>
+          </div>
+          <div class="info-item">
+            <span class="info-key">読み込み状態</span>
+            <span class="info-value" id="load-status">読み込み中...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script
+      type="text/javascript"
+      src="https://cdn.geolonia.com/v1/embed?geolonia-api-key=32a009af0e784ae2a243260dbf917eb6"
+    ></script>
+
+    <script>
+      // Theme management
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
+      const currentTheme =
+        localStorage.getItem("theme") ||
+        (prefersDark.matches ? "dark" : "light");
+
+      function setTheme(theme) {
+        document.documentElement.setAttribute("data-theme", theme);
+        localStorage.setItem("theme", theme);
+        document.getElementById("theme-icon").textContent =
+          theme === "dark" ? "☀️" : "🌙";
+      }
+
+      function toggleTheme() {
+        const current =
+          document.documentElement.getAttribute("data-theme") || "light";
+        setTheme(current === "dark" ? "light" : "dark");
+      }
+
+      // Initialize theme
+      setTheme(currentTheme);
+
+      // Map functionality
+      let map;
+
+      function updateMapInfo(lat, lng, zoom, style) {
+        document.getElementById("current-coords").textContent = `${lat.toFixed(
+          4
+        )}, ${lng.toFixed(4)}`;
+        document.getElementById("current-zoom").textContent = zoom.toString();
+        document.getElementById("current-style").textContent =
+          style.split("/")[1] || style;
+      }
+
+      function goToTokyo() {
+        const mapElement = document.querySelector(".geolonia");
+        mapElement.setAttribute("data-lat", "35.6762");
+        mapElement.setAttribute("data-lng", "139.6503");
+        mapElement.setAttribute("data-zoom", "10");
+        location.reload(); // Simple reload to apply new attributes
+      }
+
+      function goToOsaka() {
+        const mapElement = document.querySelector(".geolonia");
+        mapElement.setAttribute("data-lat", "34.6937");
+        mapElement.setAttribute("data-lng", "135.5023");
+        mapElement.setAttribute("data-zoom", "10");
+        location.reload();
+      }
+
+      function resetView() {
+        const mapElement = document.querySelector(".geolonia");
+        mapElement.setAttribute("data-lat", "35.6762");
+        mapElement.setAttribute("data-lng", "139.6503");
+        mapElement.setAttribute("data-zoom", "5");
+        location.reload();
+      }
+
+      function changeStyle(style) {
+        const mapElement = document.querySelector(".geolonia");
+        mapElement.setAttribute("data-style", style);
+        location.reload();
+      }
+
+      // Loading state management
+      window.addEventListener("load", function () {
+        setTimeout(() => {
+          document.getElementById("loading").style.display = "none";
+          document.getElementById("load-status").textContent = "読み込み完了";
+
+          // Initialize map info
+          const mapElement = document.querySelector(".geolonia");
+          const lat =
+            parseFloat(mapElement.getAttribute("data-lat")) || 35.6762;
+          const lng =
+            parseFloat(mapElement.getAttribute("data-lng")) || 139.6503;
+          const zoom = parseFloat(mapElement.getAttribute("data-zoom")) || 5;
+          const style =
+            mapElement.getAttribute("data-style") || "geolonia/basic";
+
+          updateMapInfo(lat, lng, zoom, style);
+        }, 2000);
+      });
+
+      // Keyboard navigation for map
+      document
+        .querySelector(".geolonia")
+        .addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            // Map interaction would be handled by Geolonia's built-in controls
+          }
+        });
+
+      // Listen for system theme changes
+      prefersDark.addEventListener("change", (e) => {
+        if (!localStorage.getItem("theme")) {
+          setTheme(e.matches ? "dark" : "light");
+        }
+      });
+
+      // Announce loading completion to screen readers
+      function announceToScreenReader(message) {
+        const announcement = document.createElement("div");
+        announcement.setAttribute("aria-live", "polite");
+        announcement.setAttribute("aria-atomic", "true");
+        announcement.className = "sr-only";
+        announcement.textContent = message;
+        document.body.appendChild(announcement);
+
+        setTimeout(() => {
+          document.body.removeChild(announcement);
+        }, 1000);
+      }
+
+      // Performance monitoring
+      if ("PerformanceObserver" in window) {
+        const observer = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            if (entry.name.includes("geolonia")) {
+              console.log(
+                "Map resource loaded:",
+                entry.name,
+                entry.duration + "ms"
+              );
+            }
+          }
+        });
+        observer.observe({ entryTypes: ["resource"] });
+      }
+    </script>
+  </body>
+</html>
