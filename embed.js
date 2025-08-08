@@ -355,13 +355,94 @@ class MinimalMapEmbed extends HTMLElement {
   setStyle(style) {
     const resolvedUrl = this.resolveStyleUrl(style);
     if (this.map) {
-      this.map.setStyle(resolvedUrl);
-      this.currentStyleUrl = resolvedUrl;
+      // 現在の地図の状態を保存
+      const center = this.map.getCenter();
+      const zoom = this.map.getZoom();
+      const bearing = this.map.getBearing();
+      const pitch = this.map.getPitch();
 
-      // スタイル読み込み完了後にAPIキーを適用
-      this.map.once("style.load", () => {
+      // フォールバック処理のフラグ
+      let hasErrorOccurred = false;
+      let styleLoadTimeout = null;
+
+      // エラーハンドラーを設定
+      const errorHandler = (e) => {
+        if (hasErrorOccurred) return; // 重複処理を防ぐ
+        hasErrorOccurred = true;
+
+        console.warn("Style loading error:", e);
+
+        // タイムアウトをクリア
+        if (styleLoadTimeout) {
+          clearTimeout(styleLoadTimeout);
+        }
+
+        // エラー時は基本スタイルにフォールバック
+        if (style !== "geolonia/basic") {
+          console.log("Falling back to basic style due to error");
+          this.showError(
+            `「${this.getStyleDisplayName(
+              style
+            )}」の読み込みに失敗しました。基本スタイルに切り替えます。`
+          );
+
+          // イベントリスナーを削除
+          this.map.off("error", errorHandler);
+          this.map.off("style.load", styleLoadHandler);
+
+          // 少し遅延してから基本スタイルを設定
+          setTimeout(() => {
+            this.setStyle("geolonia/basic");
+          }, 500);
+        } else {
+          this.showError("基本スタイルの読み込みに失敗しました");
+        }
+      };
+
+      // スタイル読み込み完了ハンドラー
+      const styleLoadHandler = () => {
+        if (hasErrorOccurred) return; // エラーが発生していた場合は処理しない
+
+        // タイムアウトをクリア
+        if (styleLoadTimeout) {
+          clearTimeout(styleLoadTimeout);
+        }
+
+        // イベントリスナーを削除
+        this.map.off("error", errorHandler);
+
+        // 地図の状態を復元
+        this.map.setCenter([center.lng, center.lat]);
+        this.map.setZoom(zoom);
+        this.map.setBearing(bearing);
+        this.map.setPitch(pitch);
+
+        // APIキーを適用
         this.applyApiKeyToSources();
-      });
+
+        console.log(`Style loaded successfully: ${style}`);
+      };
+
+      // タイムアウト設定（10秒でフォールバック）
+      styleLoadTimeout = setTimeout(() => {
+        if (!hasErrorOccurred) {
+          console.warn("Style loading timeout");
+          errorHandler({ error: { message: "Style loading timeout" } });
+        }
+      }, 10000);
+
+      // イベントリスナーを設定
+      this.map.once("error", errorHandler);
+      this.map.once("style.load", styleLoadHandler);
+
+      try {
+        this.map.setStyle(resolvedUrl);
+        this.currentStyleUrl = resolvedUrl;
+      } catch (error) {
+        console.error("Failed to set style:", error);
+        errorHandler({ error });
+        return;
+      }
 
       // スタイルコントロールの選択状態を更新
       if (this.styleControl && this.styleControl.updateSelection) {
@@ -371,9 +452,24 @@ class MinimalMapEmbed extends HTMLElement {
     this.setAttribute("data-style-json", style);
   }
 
+  // スタイル表示名を取得
+  getStyleDisplayName(styleId) {
+    const styleMap = {
+      "geolonia/basic": "基本",
+      "geolonia/gsi": "地理院",
+      "geolonia/midnight": "ミッドナイト",
+      "geolonia/red-planet": "火星",
+      "geolonia/notebook": "ノート",
+    };
+    return styleMap[styleId] || styleId;
+  }
+
   // Geoloniaスタイルの一覧を取得
   getAvailableStyles() {
-    return Object.keys(this.geoloniaStyles);
+    // 地理院スタイルを除外した安定版のみを返す
+    return Object.keys(this.geoloniaStyles).filter(
+      (style) => style !== "geolonia/gsi"
+    );
   }
 
   // APIキーを設定
@@ -407,11 +503,11 @@ class MinimalMapEmbed extends HTMLElement {
       constructor(embed) {
         this.embed = embed;
         this.styles = [
-          { id: "geolonia/basic", name: "基本" },
-          { id: "geolonia/gsi", name: "地理院" },
-          { id: "geolonia/midnight", name: "ミッドナイト" },
-          { id: "geolonia/red-planet", name: "火星" },
-          { id: "geolonia/notebook", name: "ノート" },
+          { id: "geolonia/basic", name: "基本", stable: true },
+          // { id: 'geolonia/gsi', name: '地理院', stable: false }, // 一時的に無効化
+          { id: "geolonia/midnight", name: "ミッドナイト", stable: true },
+          { id: "geolonia/red-planet", name: "火星", stable: true },
+          { id: "geolonia/notebook", name: "ノート", stable: true },
         ];
       }
 
@@ -442,14 +538,38 @@ class MinimalMapEmbed extends HTMLElement {
         this.styles.forEach((style) => {
           const option = document.createElement("option");
           option.value = style.id;
-          option.textContent = style.name;
+          option.textContent = style.stable
+            ? style.name
+            : `${style.name} (試験的)`;
           option.selected = style.id === currentStyle;
+
+          // 不安定なスタイルは色を変える
+          if (!style.stable) {
+            option.style.color = "#ff6600";
+            option.title = "一部のレイヤーでエラーが発生する可能性があります";
+          }
+
           select.appendChild(option);
         });
 
         // 変更イベント
         select.addEventListener("change", (event) => {
           const newStyle = event.target.value;
+          const selectedStyleInfo = this.styles.find((s) => s.id === newStyle);
+
+          // 不安定なスタイルの場合は警告
+          if (selectedStyleInfo && !selectedStyleInfo.stable) {
+            const confirmMsg = `「${selectedStyleInfo.name}」は試験的な機能です。\n表示エラーが発生する場合があります。\n続行しますか？`;
+            if (!confirm(confirmMsg)) {
+              // キャンセルされた場合は元の選択に戻す
+              const currentStyle =
+                this.embed.getAttribute("data-style-json") ||
+                this.embed.defaults.style;
+              select.value = currentStyle;
+              return;
+            }
+          }
+
           this.embed.setStyle(newStyle);
         });
 
@@ -470,6 +590,9 @@ class MinimalMapEmbed extends HTMLElement {
       updateSelection(styleId) {
         if (this.select) {
           this.select.value = styleId;
+
+          // 属性も更新
+          this.embed.setAttribute("data-style-json", styleId);
         }
       }
     }
@@ -492,7 +615,6 @@ class MinimalMapEmbed extends HTMLElement {
     if (!this.apiKey || !this.map) return;
 
     try {
-      // より安全なアプローチ: スタイルJSONを取得して修正し、再設定
       const currentStyle = this.map.getStyle();
       if (!currentStyle || !currentStyle.sources) return;
 
@@ -502,8 +624,21 @@ class MinimalMapEmbed extends HTMLElement {
       // ソースのURLを更新
       for (const [sourceId, source] of Object.entries(updatedStyle.sources)) {
         if (source.url && source.url.includes("YOUR-API-KEY")) {
-          source.url = source.url.replace("YOUR-API-KEY", this.apiKey);
+          source.url = source.url.replace(/YOUR-API-KEY/g, this.apiKey);
           needsUpdate = true;
+        }
+        // tiles配列内のAPIキーも更新（一部のスタイルで使用される場合）
+        if (source.tiles && Array.isArray(source.tiles)) {
+          source.tiles = source.tiles.map((tileUrl) => {
+            if (
+              typeof tileUrl === "string" &&
+              tileUrl.includes("YOUR-API-KEY")
+            ) {
+              needsUpdate = true;
+              return tileUrl.replace(/YOUR-API-KEY/g, this.apiKey);
+            }
+            return tileUrl;
+          });
         }
       }
 
@@ -514,20 +649,20 @@ class MinimalMapEmbed extends HTMLElement {
         const bearing = this.map.getBearing();
         const pitch = this.map.getPitch();
 
+        // スタイルを静かに更新（イベントを発生させない）
         this.map.setStyle(updatedStyle);
 
-        // スタイル読み込み完了後に位置を復元
-        this.map.once("style.load", () => {
-          this.map.setCenter([center.lng, center.lat]);
-          this.map.setZoom(zoom);
-          this.map.setBearing(bearing);
-          this.map.setPitch(pitch);
-        });
+        // 位置を即座に復元
+        this.map.setCenter([center.lng, center.lat]);
+        this.map.setZoom(zoom);
+        this.map.setBearing(bearing);
+        this.map.setPitch(pitch);
+
+        console.log("API key applied to sources successfully");
       }
     } catch (error) {
       console.warn("Failed to apply API key to sources:", error);
-      // フォールバック: 個別にソースを更新する旧方式
-      this.applyApiKeyToSourcesFallback();
+      // エラーの場合は何もしない（元のスタイルのまま）
     }
   }
 
